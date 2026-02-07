@@ -1,0 +1,6 @@
+.env
+.tuskbot
+.idea
+.DS_Store
+/bin
+/vendor
