@@ -15,11 +15,11 @@ import (
 const openRouterURL = "https://openrouter.ai/api/v1/chat/completions"
 
 type OpenRouter struct {
-	cfg    *config.OpenRouterConfig
+	cfg    *config.AppConfig
 	client *http.Client
 }
 
-func NewOpenRouter(cfg *config.OpenRouterConfig) *OpenRouter {
+func NewOpenRouter(cfg *config.AppConfig) *OpenRouter {
 	return &OpenRouter{
 		cfg:    cfg,
 		client: &http.Client{},
@@ -60,7 +60,7 @@ func (o *OpenRouter) Chat(ctx context.Context, history []core.Message, tools []c
 		return core.Message{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+o.cfg.APIKey)
+	req.Header.Set("Authorization", "Bearer "+o.cfg.OpenRouterAPIKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("HTTP-Referer", core.TuskRepositoryURL)
 	req.Header.Set("X-Title", core.TuskName)

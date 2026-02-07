@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/sandevgo/tuskbot/internal/config"
 	"github.com/sandevgo/tuskbot/pkg/log"
 	"github.com/sandevgo/tuskbot/pkg/srv"
 )
@@ -15,7 +16,7 @@ func main() {
 
 	// logger setup
 	var flushLog func()
-	ctx, flushLog = log.NewContextWithLogger(ctx)
+	ctx, flushLog = log.NewContextWithLogger(ctx, config.IsDebug())
 	defer flushLog()
 
 	logger := log.FromCtx(ctx)

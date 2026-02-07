@@ -52,6 +52,11 @@ clean:
 heap:
 	@go build -gcflags="-m" ./internal/... 2>&1  | grep escapes
 
+migration:
+	@echo "Creating new migration..."
+	@goose -dir ./internal/storage/sqlite/migrations create $(name) sql
+	@echo "New migration created successfully."
+
 # LLAMACPP BUILDER
 
 LLAMA_DOCKER_IMG := llama-builder
