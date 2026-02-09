@@ -8,8 +8,8 @@ import (
 )
 
 type TelegramConfig struct {
-	Token   string `env:"TELEGRAM_TOKEN,required,notEmpty"`
-	OwnerID int64  `env:"TELEGRAM_OWNER_ID,required"`
+	Token   string `env:"TUSK_TELEGRAM_TOKEN,required,notEmpty"`
+	OwnerID int64  `env:"TUSK_TELEGRAM_OWNER_ID,required"`
 }
 
 func NewTelegramConfig(ctx context.Context) *TelegramConfig {

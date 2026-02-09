@@ -1,6 +1,15 @@
 package core
 
-import "encoding/json"
+import (
+	"encoding/json"
+)
+
+const (
+	RoleUser      = "user"
+	RoleAssistant = "assistant"
+	RoleSystem    = "system"
+	RoleTool      = "tool"
+)
 
 const (
 	TuskName          = "TuskBot"
@@ -37,4 +46,7 @@ type Message struct {
 	Reasoning  string     `json:"reasoning,omitempty"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
+
+	// Internal
+	Embedding [][]float32 `json:"-"`
 }

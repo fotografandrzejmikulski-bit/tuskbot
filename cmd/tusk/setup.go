@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 
 	"github.com/sandevgo/tuskbot/internal/config"
+	"github.com/sandevgo/tuskbot/internal/core"
 	"github.com/sandevgo/tuskbot/internal/providers/llm"
 	"github.com/sandevgo/tuskbot/internal/providers/mcp"
 	"github.com/sandevgo/tuskbot/internal/providers/rag"
 	"github.com/sandevgo/tuskbot/internal/providers/tools"
 	"github.com/sandevgo/tuskbot/internal/service/agent"
+	"github.com/sandevgo/tuskbot/internal/service/memory"
 	"github.com/sandevgo/tuskbot/internal/storage/sqlite"
 	"github.com/sandevgo/tuskbot/internal/transport/telegram"
 	"github.com/sandevgo/tuskbot/pkg/log"
@@ -26,11 +28,14 @@ func NewServices(ctx context.Context) []srv.Service {
 	ragCfg := config.NewRAGConfig(ctx)
 
 	// 2. Storage
-	db, historyRepo, err := initStorage(ctx, appCfg)
+	db, messagesRepo, err := initStorage(ctx, appCfg)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to initialize storage")
 	}
 	services = append(services, srv.NewCleanup(db.Close))
+
+	// Knowledge Repo
+	knowledgeRepo := sqlite.NewKnowledgeRepo(db)
 
 	// 3. AI Provider
 	aiProvider, err := llm.NewProvider(ctx, appCfg)
@@ -38,24 +43,45 @@ func NewServices(ctx context.Context) []srv.Service {
 		logger.Fatal().Err(err).Msg("failed to initialize LLM provider")
 	}
 
-	// 4. RAG Provider
+	// 4. RAG Provider (Embedder)
 	embedder, err := rag.NewEmbedder(ragCfg)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to initialize RAG embedder")
 	}
 	services = append(services, srv.NewCleanup(embedder.Shutdown))
 
-	// 5. MCP & Tools
+	// 5. Knowledge Extractor Service
+	// Runs in background to convert conversation history into atomic facts
+	//extractor := knowledge.NewExtractor(knowledgeRepo, aiProvider, embedder)
+	//services = append(services, extractor)
+
+	// 6. MCP & Tools
 	mcpManager, err := initMCP(ctx, appCfg)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to initialize MCP manager")
 	}
 	services = append(services, mcpManager)
 
-	// 6. Agent Service
-	ag := agent.NewAgent(appCfg, aiProvider, mcpManager, historyRepo, embedder)
+	mem := memory.NewMemory(
+		appCfg,
+		messagesRepo,
+		knowledgeRepo,
+		embedder,
+		memory.NewPromptBuilder(appCfg),
+	)
 
-	// 7. Transports
+	executor := agent.NewExecutor(mcpManager)
+
+	// 7. Agent Service
+	ag := agent.NewAgent(
+		appCfg,
+		aiProvider,
+		mcpManager,
+		mem,
+		executor,
+	)
+
+	// 8. Transports
 	transports, err := initTransports(ctx, appCfg, ag)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to initialize transports")
@@ -65,12 +91,13 @@ func NewServices(ctx context.Context) []srv.Service {
 	return services
 }
 
-func initStorage(ctx context.Context, cfg *config.AppConfig) (*sql.DB, agent.HistoryRepository, error) {
+// TODO: move Knowledge Repo initialization here
+func initStorage(ctx context.Context, cfg *config.AppConfig) (*sql.DB, core.MessagesRepository, error) {
 	db, err := sqlite.NewDB(ctx, cfg.GetDatabasePath())
 	if err != nil {
 		return nil, nil, err
 	}
-	return db, sqlite.NewHistory(db), nil
+	return db, sqlite.NewMessagesRepo(db), nil
 }
 
 func initMCP(ctx context.Context, cfg *config.AppConfig) (*mcp.Manager, error) {

@@ -10,6 +10,7 @@
 - Make thin wrappers for external libraries in `pkg` folder. Treat it as a "framework" layer.
 - Don't over-engineer solutions, but keep in mind scalability and maintainability.
 - Don't wire dependencies in main.go. Use dependency setup.go file instead.
+- Don't add comments where the code is self-explanatory.
 - **Configuration Pattern**: Define config structs in `config/` package. Create a `New<Name>Config(ctx)` function for each struct that handles environment variable parsing (using `caarlos0/env` or similar) and validation. Inject these config structs into your services in `setup.go`. Do not use `os.Getenv` directly in service constructors or `setup.go`.
 
 ## Architecture & Folder Structure

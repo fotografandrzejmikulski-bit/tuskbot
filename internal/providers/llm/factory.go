@@ -5,18 +5,25 @@ import (
 	"fmt"
 
 	"github.com/sandevgo/tuskbot/internal/config"
-	"github.com/sandevgo/tuskbot/internal/service/agent"
+	"github.com/sandevgo/tuskbot/internal/core"
+	"github.com/sandevgo/tuskbot/pkg/log"
 )
 
 // NewProvider creates the appropriate AIProvider based on configuration.
-func NewProvider(ctx context.Context, appCfg *config.AppConfig) (agent.AIProvider, error) {
-	switch appCfg.LLMProvider {
+func NewProvider(ctx context.Context, appCfg *config.AppConfig) (core.AIProvider, error) {
+	log.FromCtx(ctx).Info().
+		Str("provider", appCfg.Provider).
+		Str("model", appCfg.Model).
+		Msg("main model config")
+
+	switch appCfg.Provider {
 	case "openrouter":
-		cfg := config.NewOpenRouterConfig(ctx)
-		return NewOpenRouter(cfg), nil
-	// Future: case "openai": ...
-	// Future: case "ollama": ...
+		return NewOpenRouter(appCfg), nil
+	case "openai":
+		return nil, fmt.Errorf("openai provider not yet implemented")
+	case "ollama":
+		return nil, fmt.Errorf("ollama provider not yet implemented")
 	default:
-		return nil, fmt.Errorf("unknown llm provider: %s", appCfg.LLMProvider)
+		return nil, fmt.Errorf("unknown llm provider: %s", appCfg.Provider)
 	}
 }

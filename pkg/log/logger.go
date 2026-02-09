@@ -18,7 +18,7 @@ import (
 // 2 - folder/file.go:line
 const logPathLength = 1
 
-func NewContextWithLogger(ctx context.Context) (context.Context, func()) {
+func NewContextWithLogger(ctx context.Context, debug bool) (context.Context, func()) {
 	zerolog.CallerMarshalFunc = func(pc uintptr, file string, line int) string {
 		pathItems := strings.Split(file, "/")
 		if len(pathItems) > 4 {
@@ -27,7 +27,7 @@ func NewContextWithLogger(ctx context.Context) (context.Context, func()) {
 		return file + ":" + strconv.Itoa(line)
 	}
 
-	if os.Getenv("DEBUG") == "1" {
+	if debug {
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	} else {
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)

@@ -10,15 +10,15 @@ import (
 	"github.com/sandevgo/tuskbot/pkg/log"
 )
 
-type History struct {
+type MessagesRepo struct {
 	db *sql.DB
 }
 
-func NewHistory(db *sql.DB) *History {
-	return &History{db: db}
+func NewMessagesRepo(db *sql.DB) *MessagesRepo {
+	return &MessagesRepo{db: db}
 }
 
-func (h *History) AddMessage(ctx context.Context, sessionID string, msg core.Message) error {
+func (h *MessagesRepo) AddMessage(ctx context.Context, sessionID string, msg core.Message) error {
 	toolCallsJSON, err := json.Marshal(msg.ToolCalls)
 	if err != nil {
 		return fmt.Errorf("failed to marshal tool calls: %w", err)
@@ -30,15 +30,41 @@ func (h *History) AddMessage(ctx context.Context, sessionID string, msg core.Mes
 		tcStr = ""
 	}
 
+	tx, err := h.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 1. Insert into main table
 	query := `INSERT INTO messages (session_id, role, content, tool_calls, tool_call_id) VALUES (?, ?, ?, ?, ?)`
-	_, err = h.db.ExecContext(ctx, query, sessionID, msg.Role, msg.Content, tcStr, msg.ToolCallID)
+	res, err := tx.ExecContext(ctx, query, sessionID, msg.Role, msg.Content, tcStr, msg.ToolCallID)
 	if err != nil {
 		return fmt.Errorf("failed to insert message: %w", err)
 	}
-	return nil
+
+	// 2. Insert into vector table if embedding exists
+	id, err := res.LastInsertId()
+	if err != nil {
+		return err
+	}
+
+	if msg.Embedding != nil && len(msg.Embedding) > 0 {
+		vecBlob, err := serializeVector(msg.Embedding[0])
+		if err != nil {
+			return err
+		}
+		// Use 'rowid' explicitly to ensure the vector is tied to the message ID
+		_, err = tx.ExecContext(ctx, `INSERT INTO messages_vec (rowid, embedding) VALUES (?, ?)`, id, vecBlob)
+		if err != nil {
+			return fmt.Errorf("failed to insert message vector: %w", err)
+		}
+	}
+
+	return tx.Commit()
 }
 
-func (h *History) GetMessages(ctx context.Context, sessionID string, limit int) ([]core.Message, error) {
+func (h *MessagesRepo) GetMessages(ctx context.Context, sessionID string, limit int) ([]core.Message, error) {
 	// Fetch the LAST 'limit' messages by ordering DESC
 	query := `SELECT role, content, tool_calls, tool_call_id FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT ?`
 
