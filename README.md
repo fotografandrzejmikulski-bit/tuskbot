@@ -34,11 +34,23 @@ TuskBot comes with a set of pre-configured tools for immediate use:
 *   **Shell Execution:** Run system commands and scripts directly through the chat.
 *   **MCP Manager:** Allows agent to connect and restart MCP servers.
 
-## 🗺 Roadmap
+## 💾 Installation
+Download the pre-compiled binary for your platform from the [Releases](https://github.com/sandevgo/tuskbot/releases) page.
 
-*   **[ ] Unified Command Interface:** Support of slash-commands (`/`).
-*   **[ ] Cron/heartbeat:** Scheduled tasks and periodic checks.
-*   **[ ] Multi-Agent Orchestration:** Sub-agents to delegate specialized tasks
+**Quick Install (Linux/macOS):**
+
+```bash
+tar -xzvf tusk-*.tar.gz
+chmod +x tusk-*
+sudo mv tusk-* /usr/local/bin/tusk
+tusk install
+```
+
+**Running TuskBot**
+
+```bash
+tusk start
+```
 
 ## 🔧 Configuration
 
@@ -58,3 +70,9 @@ TuskBot uses environment variables for configuration.
 | `TUSK_ANTHROPIC_API_KEY` | API Key for Anthropic |
 | `TUSK_OLLAMA_BASE_URL` | Base URL for Ollama (default: `http://127.0.0.1:11434`) |
 | `TUSK_DEBUG` | Enable debug logging (set to `1`) |
+
+## 🗺 Roadmap
+
+*   **[ ] Unified Command Interface:** Support of slash-commands (`/`).
+*   **[ ] Cron/heartbeat:** Scheduled tasks and periodic checks.
+*   **[ ] Multi-Agent Orchestration:** Sub-agents to delegate specialized tasks
