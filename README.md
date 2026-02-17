@@ -52,6 +52,32 @@ tusk install
 tusk start
 ```
 
+## Using Docker
+
+Docker compose example:
+
+```yaml
+services:
+  tuskbot:
+    image: ghcr.io/sandevgo/tuskbot:latest
+    volumes:
+      - tuskbot-data:/root/.tuskbot
+    command: start
+
+volumes:
+  tuskbot-data:
+```
+
+**Running installation with Docker Compose:**
+
+```bash
+# Configure
+docker compose run tuskbot install
+
+# Run
+docker compose up -d
+```
+
 ## 🔧 Configuration
 
 TuskBot uses environment variables for configuration.
