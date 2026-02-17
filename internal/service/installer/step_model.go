@@ -79,7 +79,7 @@ func (s *ModelStep) Update(msg tea.Msg, state *InstallState, width, height int) 
 		return s, nil
 
 	case errMsg:
-		if s.provider == "ollama" {
+		if s.provider == "ollama" || s.provider == "custom" {
 			s.manualMode = true
 			s.loading = false
 			s.fetching = false
@@ -148,6 +148,10 @@ func (s *ModelStep) fetchModels(state *InstallState) tea.Cmd {
 			baseURL := state.EnvVars["TUSK_OLLAMA_BASE_URL"]
 			apiKey := state.EnvVars["TUSK_OLLAMA_API_KEY"]
 			provider = llm.NewOllama(baseURL, apiKey, "")
+		case "custom":
+			baseURL := state.EnvVars["TUSK_CUSTOM_OPENAI_BASE_URL"]
+			apiKey := state.EnvVars["TUSK_CUSTOM_OPENAI_API_KEY"]
+			provider = llm.NewCustomOpenAI(baseURL, apiKey, "")
 		default:
 			return errMsg(fmt.Errorf("unknown provider: %s", s.provider))
 		}
@@ -180,7 +184,7 @@ func (s *ModelStep) View(state *InstallState) string {
 	}
 
 	if s.manualMode {
-		return "Ollama connection failed. Enter model name manually:\n\n" +
+		return fmt.Sprintf("%s connection failed. Enter model name manually:\n\n", strings.Title(s.provider)) +
 			s.input.View() + "\n\n" +
 			"Examples: llama3.2, mistral, codellama, phi3\n" +
 			"(press enter to confirm)\n"
