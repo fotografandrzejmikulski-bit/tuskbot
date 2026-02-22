@@ -2,6 +2,7 @@ package llamacpp
 
 /*
 #include <stdlib.h>
+#include <stdbool.h>
 #include "llama.h"
 
 // Silent callback to suppress logs
@@ -20,11 +21,23 @@ void set_silent_logger() {
 void set_default_logger() {
     llama_log_set(NULL, NULL);
 }
+
+// Callback to check abort flag
+bool tusk_abort_callback(void * data) {
+    return *(bool*)data;
+}
+
+// Helper to register the callback safely
+void set_tusk_abort_callback(struct llama_context * ctx, bool * flag) {
+    llama_set_abort_callback(ctx, tusk_abort_callback, flag);
+}
 */
 import "C"
 import (
+	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"unsafe"
@@ -83,6 +96,14 @@ func NewLlamaEmbedder(modelPath string) (*LlamaEmbedder, error) {
 	cParams.n_batch = C.uint32_t(nCtx)
 	cParams.n_ubatch = C.uint32_t(nCtx)
 
+	nThreads := runtime.NumCPU()
+	if nThreads > 4 {
+		nThreads = 4
+	}
+
+	cParams.n_threads = C.int32_t(nThreads)
+	cParams.n_threads_batch = C.int32_t(nThreads)
+
 	ctx := C.llama_init_from_model(model, cParams)
 	if ctx == nil {
 		C.llama_model_free(model)
@@ -131,9 +152,9 @@ func (l *LlamaEmbedder) Free() {
 }
 
 // Embed generates a vector for the given text.
-func (l *LlamaEmbedder) Embed(text string) ([]float32, error) {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
+func (l *LlamaEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 
 	if l.model == nil || l.ctx == nil {
 		return nil, errors.New("embedder is not initialized or already freed")
@@ -149,15 +170,20 @@ func (l *LlamaEmbedder) Embed(text string) ([]float32, error) {
 	defer C.free(unsafe.Pointer(cText))
 
 	vocab := C.llama_model_get_vocab(l.model)
-	tokens := make([]C.llama_token, l.nCtx)
 
-	// 2. Tokenize with truncation
+	// Allocate a buffer based on input length to guarantee it fits.
+	// len(text) in bytes is a safe upper bound for token count.
+	// We add 512 just to be absolutely safe.
+	maxTokens := len(text) + 512
+	tokens := make([]C.llama_token, maxTokens)
+
+	// 2. Tokenize
 	nTokens := C.llama_tokenize(
 		vocab,
 		cText,
 		C.int32_t(len(text)),
 		(*C.llama_token)(unsafe.Pointer(&tokens[0])),
-		C.int32_t(l.nCtx),
+		C.int32_t(maxTokens),
 		true, // add_special
 		true, // parse_special
 	)
@@ -166,7 +192,7 @@ func (l *LlamaEmbedder) Embed(text string) ([]float32, error) {
 		return nil, fmt.Errorf("tokenization failed (code: %d)", nTokens)
 	}
 
-	// 3. Safety Clamp
+	// 3. Safety Clamp / Truncate to context size
 	if int(nTokens) > l.nCtx {
 		nTokens = C.int32_t(l.nCtx)
 	}
@@ -176,13 +202,40 @@ func (l *LlamaEmbedder) Embed(text string) ([]float32, error) {
 		nTokens,
 	)
 
+	// 4. Setup Abort Callback for Context Cancellation
+	var abortFlag C.bool = false
+	C.set_tusk_abort_callback(l.ctx, &abortFlag)
+
+	// Monitor context in background
+	done := make(chan struct{})
+	defer func() {
+		close(done)
+		// Clear callback
+		C.set_tusk_abort_callback(l.ctx, nil)
+	}()
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			abortFlag = true
+		case <-done:
+		}
+	}()
+
+	// 5. Inference
 	// Use the correct inference function based on architecture
 	if l.isEncoder {
 		if res := C.llama_encode(l.ctx, batch); res != 0 {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			return nil, fmt.Errorf("llama_encode failed with code %d", res)
 		}
 	} else {
 		if res := C.llama_decode(l.ctx, batch); res != 0 {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			return nil, fmt.Errorf("llama_decode failed with code %d", res)
 		}
 	}

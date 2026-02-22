@@ -2,8 +2,6 @@ package memory
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -220,7 +218,7 @@ func (e *Extractor) persistFacts(ctx context.Context, facts []extractedFact) err
 }
 
 func (e *Extractor) saveFact(ctx context.Context, fact extractedFact) error {
-	chunks, err := e.embedder.Embed(ctx, fact.Fact)
+	chunks, err := e.embedder.EncodePassage(ctx, fact.Fact)
 	if err != nil {
 		return fmt.Errorf("embed: %w", err)
 	}
@@ -233,7 +231,6 @@ func (e *Extractor) saveFact(ctx context.Context, fact extractedFact) error {
 		Category:  fact.Category,
 		Source:    "extracted",
 		Embedding: chunks[0],
-		FactHash:  hashFact(fact.Fact),
 	}
 
 	if err := e.repo.SaveFact(ctx, stored); err != nil {
@@ -334,11 +331,6 @@ func extractJSONArray(content string) string {
 	}
 
 	return content[start : start+end+1]
-}
-
-func hashFact(fact string) string {
-	hash := sha256.Sum256([]byte(fact))
-	return hex.EncodeToString(hash[:])
 }
 
 func isDuplicateError(err error) bool {

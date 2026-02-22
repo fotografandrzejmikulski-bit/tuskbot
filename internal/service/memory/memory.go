@@ -58,12 +58,11 @@ func (s *Memory) getContext(ctx context.Context, sessionID, userQuery string) st
 	logger := log.FromCtx(ctx)
 
 	// 1. Generate embedding for the query
-	chunks, err := s.embedder.Embed(ctx, userQuery)
-	if err != nil || len(chunks) == 0 {
+	queryVec, err := s.embedder.EncodeQuery(ctx, userQuery)
+	if err != nil {
 		logger.Warn().Err(err).Msg("failed to embed query for RAG")
 		return ""
 	}
-	queryVec := chunks[0]
 
 	// 2. Search Knowledge and Semantic History
 	items, err := s.knowRepo.SearchContext(ctx, queryVec, 5, 3)
@@ -106,11 +105,5 @@ func (s *Memory) getContext(ctx context.Context, sessionID, userQuery string) st
 }
 
 func (s *Memory) SaveMessage(ctx context.Context, sessionID string, msg core.Message) error {
-	if msg.Content != "" && len(msg.Embedding) == 0 {
-		chunks, err := s.embedder.Embed(ctx, msg.Content)
-		if err == nil {
-			msg.Embedding = chunks
-		}
-	}
 	return s.msgRepo.AddMessage(ctx, sessionID, msg)
 }

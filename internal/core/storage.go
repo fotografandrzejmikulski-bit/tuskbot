@@ -8,6 +8,8 @@ import (
 type MessagesRepository interface {
 	AddMessage(ctx context.Context, sessionID string, msg Message) error
 	GetMessages(ctx context.Context, sessionID string, limit int) ([]Message, error)
+	GetUnembeddedMessages(ctx context.Context, limit int) ([]StoredMessage, error)
+	UpdateMessageEmbedding(ctx context.Context, id int64, embedding []float32) error
 }
 
 type KnowledgeRepository interface {
@@ -27,6 +29,7 @@ type StoredMessage struct {
 	ToolCallID string    `json:"tool_call_id,omitempty"`
 	Embedding  []float32 `json:"-"`
 	CreatedAt  time.Time `json:"created_at"`
+	Embedded   bool      `json:"embedded"`
 	Extracted  bool      `json:"extracted"`
 }
 
@@ -38,5 +41,4 @@ type StoredKnowledge struct {
 	Embedding []float32  `json:"-"`
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt *time.Time `json:"updated_at,omitempty"`
-	FactHash  string     `json:"fact_hash"`
 }

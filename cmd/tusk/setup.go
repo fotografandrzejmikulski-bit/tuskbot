@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"os"
 	"path/filepath"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/sandevgo/tuskbot/internal/providers/llm"
 	"github.com/sandevgo/tuskbot/internal/providers/mcp"
 	"github.com/sandevgo/tuskbot/internal/providers/rag"
-	"github.com/sandevgo/tuskbot/internal/providers/tools"
 	"github.com/sandevgo/tuskbot/internal/service/agent"
 	"github.com/sandevgo/tuskbot/internal/service/memory"
 	"github.com/sandevgo/tuskbot/internal/storage/sqlite"
@@ -53,16 +51,22 @@ func NewServices(ctx context.Context) []srv.Service {
 	}
 
 	// 4. RAG Provider (Embedder)
-	embedder, err := rag.NewEmbedder(ragCfg)
+	embedModel, err := rag.NewEmbeddingModel(ragCfg)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("failed to initialize RAG embedder")
+		logger.Fatal().Err(err).Msg("failed to initialize embedding model")
 	}
-	services = append(services, srv.NewCleanup(embedder.Shutdown))
+	services = append(services, srv.NewCleanup(embedModel.Shutdown))
+
+	embedder := rag.NewEmbedder(embedModel)
 
 	// 5. Knowledge Extractor Service
 	// Runs in background to convert conversation history into atomic facts
 	extractor := memory.NewExtractor(knowledgeRepo, aiProvider, embedder)
 	services = append(services, extractor)
+
+	// Embedding extractor
+	embedderWorker := memory.NewEmbedderWorker(messagesRepo, embedder)
+	services = append(services, embedderWorker)
 
 	// 6. MCP & Tools
 	mcpManager, err := initMCP(ctx, appCfg)
@@ -109,29 +113,17 @@ func initStorage(ctx context.Context, cfg *config.AppConfig) (*sql.DB, core.Mess
 	return db, sqlite.NewMessagesRepo(db), nil
 }
 
-func initMCP(ctx context.Context, cfg *config.AppConfig) (*mcp.Manager, error) {
-	mgr, err := mcp.NewManager(ctx, cfg.GetMCPConfigPath())
+func initMCP(ctx context.Context, cfg *config.AppConfig) (*mcp.Service, error) {
+	filStorage := mcp.NewFileStorage(cfg.GetMCPConfigPath())
+	mgr, err := mcp.NewService(
+		cfg.GetRuntimePath(),
+		mcp.NewPool(),
+		mcp.NewRegistry(filStorage),
+		mcp.NewToolCache(),
+	)
 	if err != nil {
 		return nil, err
 	}
-
-	// Helper to register a toolset
-	register := func(t interface {
-		GetDefinitions() map[string]struct {
-			Description string
-			Schema      string
-			Handler     func(context.Context, json.RawMessage) (string, error)
-		}
-	}) {
-		for name, def := range t.GetDefinitions() {
-			mgr.RegisterNativeTool(name, def.Description, json.RawMessage(def.Schema), def.Handler)
-		}
-	}
-
-	// Register Core Tools
-	register(tools.NewFilesystem(cfg.GetRuntimePath()))
-	register(tools.NewShell(cfg.GetRuntimePath()))
-	register(tools.NewFetch())
 
 	return mgr, nil
 }

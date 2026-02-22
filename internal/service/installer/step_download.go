@@ -10,11 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/progress"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/sandevgo/tuskbot/internal/config"
-)
-
-const (
-	modelURL  = "https://huggingface.co/velyan/e5-base-v2-Q8_0-GGUF/resolve/main/e5-base-v2-q8_0.gguf"
-	modelName = "e5-base-v2-q8_0.gguf"
+	"github.com/sandevgo/tuskbot/internal/providers/rag"
 )
 
 type progressMsg float64
@@ -51,6 +47,7 @@ func (s *DownloadModelStep) waitForActivity() tea.Cmd {
 func (s *DownloadModelStep) doDownload() {
 	runtimePath := config.GetRuntimePath()
 	modelsDir := filepath.Join(runtimePath, "models")
+	modelName := rag.ModelNameE5BaseQ8
 	destPath := filepath.Join(modelsDir, modelName)
 
 	if err := os.MkdirAll(modelsDir, 0755); err != nil {
@@ -60,11 +57,11 @@ func (s *DownloadModelStep) doDownload() {
 
 	// Skip if exists
 	if _, err := os.Stat(destPath); err == nil {
-		s.updates <- downloadDoneMsg(destPath)
+		s.updates <- downloadDoneMsg(modelName)
 		return
 	}
 
-	resp, err := http.Get(modelURL)
+	resp, err := http.Get(rag.ModelUrlE5BaseQ8)
 	if err != nil {
 		s.updates <- errMsg(err)
 		return
@@ -96,7 +93,7 @@ func (s *DownloadModelStep) doDownload() {
 		return
 	}
 
-	s.updates <- downloadDoneMsg(destPath)
+	s.updates <- downloadDoneMsg(modelName)
 }
 
 func (s *DownloadModelStep) Update(msg tea.Msg, state *InstallState, width, height int) (Step, tea.Cmd) {
@@ -110,7 +107,7 @@ func (s *DownloadModelStep) Update(msg tea.Msg, state *InstallState, width, heig
 		return s, tea.Batch(cmds...)
 
 	case downloadDoneMsg:
-		state.EnvVars["TUSK_EMBEDDING_MODEL_PATH"] = string(msg)
+		state.EnvVars["TUSK_EMBEDDING_MODEL"] = string(msg)
 		s.done = true
 		s.path = string(msg)
 		return nil, nil
