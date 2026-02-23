@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sandevgo/tuskbot/internal/config"
 	"github.com/sandevgo/tuskbot/internal/core"
 	"github.com/sandevgo/tuskbot/internal/service/agent"
 	"github.com/sandevgo/tuskbot/pkg/conv"
@@ -18,18 +17,19 @@ const baseContextKey = "base_context"
 
 type Bot struct {
 	bot     *tele.Bot
-	cfg     *config.TelegramConfig
+	cfg     core.TelegramConfig
 	agent   *agent.Agent
+	router  core.CmdRouter
 	ownerID int64
 }
 
 func NewBot(
-	ctx context.Context,
-	cfg *config.TelegramConfig,
+	cfg core.TelegramConfig,
 	agent *agent.Agent,
+	router core.CmdRouter,
 ) (*Bot, error) {
 	pref := tele.Settings{
-		Token:  cfg.Token,
+		Token:  cfg.GetTelegramToken(),
 		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
 	}
 
@@ -38,15 +38,20 @@ func NewBot(
 		return nil, fmt.Errorf("failed to create telegram bot: %w", err)
 	}
 
-	bot := &Bot{
+	return &Bot{
 		bot:     b,
 		cfg:     cfg,
 		agent:   agent,
-		ownerID: cfg.OwnerID,
-	}
+		router:  router,
+		ownerID: cfg.GetTelegramOwnerID(),
+	}, nil
+}
+
+func (b *Bot) Start(ctx context.Context) error {
+	log.FromCtx(ctx).Info().Msg("starting telegram bot")
 
 	// Use context from Signal with logger
-	b.Use(func(next tele.HandlerFunc) tele.HandlerFunc {
+	b.bot.Use(func(next tele.HandlerFunc) tele.HandlerFunc {
 		return func(c tele.Context) error {
 			c.Set(baseContextKey, ctx)
 			return next(c)
@@ -54,22 +59,35 @@ func NewBot(
 	})
 
 	// Middleware: Only allow the owner
-	b.Use(func(next tele.HandlerFunc) tele.HandlerFunc {
+	b.bot.Use(func(next tele.HandlerFunc) tele.HandlerFunc {
 		return func(c tele.Context) error {
-			if c.Sender().ID != bot.ownerID {
+			if c.Sender().ID != b.ownerID {
 				return nil // Ignore unauthorized users
 			}
 			return next(c)
 		}
 	})
 
-	b.Handle(tele.OnText, bot.handleMessage)
+	b.bot.Handle(tele.OnText, b.handleMessage)
 
-	return bot, nil
-}
+	scope := tele.CommandScope{
+		Type:   tele.CommandScopeAllPrivateChats,
+		UserID: b.ownerID,
+	}
 
-func (b *Bot) Start(ctx context.Context) error {
-	log.FromCtx(ctx).Info().Msg("starting telegram bot")
+	var cmds []tele.Command
+	for _, cmd := range b.router.ListCommands() {
+		cmds = append(cmds, tele.Command{
+			Text:        cmd.Name(),
+			Description: cmd.Description(),
+		})
+	}
+
+	err := b.bot.SetCommands(cmds, scope)
+	if err != nil {
+		return fmt.Errorf("failed to set telegram commands: %w", err)
+	}
+
 	b.bot.Start()
 	return nil
 }
@@ -84,6 +102,11 @@ func (b *Bot) handleMessage(c tele.Context) error {
 	ctx := c.Get(baseContextKey).(context.Context)
 	logger := log.FromCtx(ctx)
 	sessionID := fmt.Sprintf("telegram-%d", c.Chat().ID)
+
+	// Check if it's a command
+	if response, isCmd := b.router.Execute(ctx, sessionID, c.Text()); isCmd {
+		return c.Send(response)
+	}
 
 	// Start background typing indicator
 	typingCtx, stopTyping := context.WithCancel(ctx)

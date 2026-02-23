@@ -13,7 +13,9 @@ import (
 	"github.com/sandevgo/tuskbot/internal/providers/mcp"
 	"github.com/sandevgo/tuskbot/internal/providers/rag"
 	"github.com/sandevgo/tuskbot/internal/service/agent"
+	"github.com/sandevgo/tuskbot/internal/service/command"
 	"github.com/sandevgo/tuskbot/internal/service/memory"
+	"github.com/sandevgo/tuskbot/internal/service/state"
 	"github.com/sandevgo/tuskbot/internal/storage/sqlite"
 	"github.com/sandevgo/tuskbot/internal/transport/telegram"
 	"github.com/sandevgo/tuskbot/pkg/log"
@@ -31,8 +33,7 @@ func NewServices(ctx context.Context) []srv.Service {
 	}
 
 	// 1. Configuration
-	appCfg := config.NewAppConfig(ctx)
-	ragCfg := config.NewRAGConfig(ctx)
+	appCfg := config.NewAppConfig(ctx, config.GetRuntimePath())
 
 	// 2. Storage
 	db, messagesRepo, err := initStorage(ctx, appCfg)
@@ -45,13 +46,15 @@ func NewServices(ctx context.Context) []srv.Service {
 	knowledgeRepo := sqlite.NewKnowledgeRepo(db)
 
 	// 3. AI Provider
-	aiProvider, err := llm.NewProvider(ctx, appCfg)
+	aiProvider, err := llm.NewDynamicProvider(ctx, appCfg)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to initialize LLM provider")
 	}
 
+	globState := state.NewGlobalState(aiProvider)
+
 	// 4. RAG Provider (Embedder)
-	embedModel, err := rag.NewEmbeddingModel(ragCfg)
+	embedModel, err := rag.NewEmbeddingModel(appCfg)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to initialize embedding model")
 	}
@@ -87,15 +90,18 @@ func NewServices(ctx context.Context) []srv.Service {
 
 	// 7. Agent Service
 	ag := agent.NewAgent(
-		appCfg,
 		aiProvider,
 		mcpManager,
 		mem,
 		executor,
 	)
 
+	// commands
+	commands := command.NewCommands(appCfg, globState, mcpManager)
+	cmdRouter := command.New(commands)
+
 	// 8. Transports
-	transports, err := initTransports(ctx, appCfg, ag)
+	transports, err := initTransports(ctx, appCfg, ag, cmdRouter)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to initialize transports")
 	}
@@ -116,7 +122,7 @@ func initStorage(ctx context.Context, cfg *config.AppConfig) (*sql.DB, core.Mess
 func initMCP(ctx context.Context, cfg *config.AppConfig) (*mcp.Service, error) {
 	filStorage := mcp.NewFileStorage(cfg.GetMCPConfigPath())
 	mgr, err := mcp.NewService(
-		cfg.GetRuntimePath(),
+		config.GetRuntimePath(),
 		mcp.NewPool(),
 		mcp.NewRegistry(filStorage),
 		mcp.NewToolCache(),
@@ -128,13 +134,12 @@ func initMCP(ctx context.Context, cfg *config.AppConfig) (*mcp.Service, error) {
 	return mgr, nil
 }
 
-func initTransports(ctx context.Context, cfg *config.AppConfig, ag *agent.Agent) ([]srv.Service, error) {
+func initTransports(ctx context.Context, cfg *config.AppConfig, ag *agent.Agent, router core.CmdRouter) ([]srv.Service, error) {
 	var services []srv.Service
 
 	// Telegram Bot
 	if cfg.IsTelegramSelected() {
-		tgCfg := config.NewTelegramConfig(ctx)
-		bot, err := telegram.NewBot(ctx, tgCfg, ag)
+		bot, err := telegram.NewBot(cfg, ag, router)
 		if err != nil {
 			return nil, err
 		}
